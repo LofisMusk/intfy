@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>IntfyCommit</key>
+	<string>$(INTFY_COMMIT)</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>intfy uses your approximate location only to keep running in the background so it can receive notifications from your ntfy server. Your location is never stored or sent anywhere.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Choose “Always Allow” so intfy can keep receiving notifications from your ntfy server while it is in the background. Only approximate location is used, and it is never stored or sent anywhere.</string>
+	<key>NSLocationDefaultAccuracyReduced</key>
+	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>intfy connects to your ntfy server on your local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_intfy._tcp</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>location</string>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>dev.intfy.refresh</string>
+	</array>
+</dict>
+</plist>

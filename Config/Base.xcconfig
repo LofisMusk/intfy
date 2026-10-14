@@ -1,0 +1,9 @@
+// Shared target settings. Personal signing (team, bundle ID) goes in
+// Signing.xcconfig, which is gitignored — copy Signing.xcconfig.example to start.
+PRODUCT_BUNDLE_IDENTIFIER = dev.intfy.app
+DEVELOPMENT_TEAM =
+
+// Shown in Settings → About. build-ipa.sh overrides it with the short commit hash.
+INTFY_COMMIT = dev
+
+#include? "Signing.xcconfig"

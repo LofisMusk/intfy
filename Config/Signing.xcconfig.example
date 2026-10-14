@@ -1,0 +1,6 @@
+// Copy to Config/Signing.xcconfig (gitignored) and fill in your own values.
+// Team ID: Xcode → Settings → Accounts, or developer.apple.com → Membership.
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Must be unique per Apple ID — a bundle ID registered by someone else's team won't sign.
+PRODUCT_BUNDLE_IDENTIFIER = com.yourname.intfy

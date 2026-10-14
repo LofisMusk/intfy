@@ -1,0 +1,41 @@
+name: Build IPA
+
+# Every commit that touches the app is a build: intfy-<short hash>.ipa, no tags or releases.
+on:
+  push:
+    paths:
+      - "Intfy/**"
+      - "Intfy.xcodeproj/**"
+      - "Config/**"
+      - "scripts/build-ipa.sh"
+      - ".github/workflows/build-ipa.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: build-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The project uses the Xcode 16+ synchronized-folder format.
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Build unsigned IPA
+        id: build
+        run: ./scripts/build-ipa.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.ipa_name }}
+          path: ${{ steps.build.outputs.ipa_path }}
+          if-no-files-found: error
