@@ -1,6 +1,7 @@
 name: Build IPA
 
-# Every commit that touches the app is a build: intfy-<short hash>.ipa, no tags or releases.
+# Every commit that touches the app is a build: intfy-<short hash>.ipa. On main it is also
+# published as a GitHub release of the same name (the workflow creates the tag; nobody tags by hand).
 on:
   push:
     paths:
@@ -16,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write  # create releases
 
 jobs:
   build:
@@ -39,3 +40,21 @@ jobs:
           name: ${{ steps.build.outputs.ipa_name }}
           path: ${{ steps.build.outputs.ipa_path }}
           if-no-files-found: error
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ steps.build.outputs.ipa_name }}
+          IPA: ${{ steps.build.outputs.ipa_path }}
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          git log -1 --format='%B' > "$notes"
+          printf '\n---\nBuilt from %s. The IPA is unsigned: install it with AltStore, SideStore or Sideloadly.\n' "$GITHUB_SHA" >> "$notes"
+          if gh release view "$NAME" > /dev/null 2>&1; then
+            # Re-run of the same commit: just refresh the asset.
+            gh release upload "$NAME" "$IPA" --clobber
+          else
+            gh release create "$NAME" "$IPA" --target "$GITHUB_SHA" --latest \
+              --title "$NAME: $(git log -1 --format='%s')" --notes-file "$notes"
+          fi

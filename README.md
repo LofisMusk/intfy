@@ -14,6 +14,8 @@ intfy is a sideloadable iOS client for **self-hosted [ntfy](https://ntfy.sh) ser
 - [Limitations](#limitations)
 - [Troubleshooting](#troubleshooting)
 - [Testing without a real server](#testing-without-a-real-server)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -52,13 +54,15 @@ Build an unsigned IPA from the command line:
 CONFIGURATION=Debug ./scripts/build-ipa.sh
 ```
 
-Builds are versioned by commit; there are no tags or releases.
+Builds are versioned by commit. Nobody tags by hand: CI creates a release (and its tag) for each build on `main`.
 
 ### CI builds
 
 The GitHub Actions workflow `.github/workflows/build-ipa.yml` builds the IPA on every push that changes the app, meaning anything under `Intfy/`, `Intfy.xcodeproj/`, `Config/`, `scripts/build-ipa.sh` or the workflow itself. You can also start it by hand under *Actions → Build IPA → Run workflow*.
 
-Download the build from the run page under **Artifacts** as `intfy-<short hash>`. GitHub delivers it as a zip that contains the `.ipa`. Artifacts are kept for 90 days by default.
+Each run uploads the build as an **artifact** named `intfy-<short hash>`. GitHub delivers artifacts as a zip that contains the `.ipa` and keeps them for 90 days by default.
+
+On `main`, the workflow also publishes a **GitHub release** named `intfy-<short hash>` with the `.ipa` attached directly (no zip). Its title and notes come from the commit message, and the newest one is marked *Latest*. Pushes to other branches only produce artifacts. Re-running the workflow for the same commit replaces the release asset instead of creating a duplicate.
 
 Or build and run from Xcode on a connected device. Signing settings live in a personal, gitignored file, so everyone signs with their own Apple ID:
 
@@ -76,6 +80,8 @@ swift scripts/make-icon.swift     # → Intfy/Assets.xcassets/AppIcon.appiconset
 ```
 
 ## Installing (sideloading)
+
+Download the newest `intfy-<hash>.ipa` from [Releases](https://github.com/LofisMusk/intfy/releases/latest), or build it yourself as described above.
 
 The IPA is unsigned. Any of these tools will sign it with your Apple ID:
 
@@ -273,3 +279,11 @@ xcrun simctl launch $DEV dev.intfy.app
 Send the app to the background (for example by launching `com.apple.Preferences`), publish a few messages, then return to the app. They should already be in the list with their original timestamps.
 
 The simulator is a good check of the streaming logic. **Long-term background behaviour can only be verified on a real device**: for example, leave the phone overnight and compare the receive times in the app with the publish times on the server.
+
+## Contributing
+
+Bug reports and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers building, signing with your own Apple ID, testing and the PR process. Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+intfy is released under the [MIT License](LICENSE).

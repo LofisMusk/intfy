@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 
 BUILD_DIR=build
 CONFIGURATION=${CONFIGURATION:-Release}
-# Versioned by commit, no tags: intfy-<short hash>.ipa ("dev" before the first commit).
+# Versioned by commit: intfy-<short hash>.ipa ("dev" before the first commit).
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
 IPA_NAME="intfy-$COMMIT.ipa"
 
