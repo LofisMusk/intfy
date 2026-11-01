@@ -36,6 +36,8 @@ struct BackgroundSettingsView: View {
                       systemImage: "battery.25percent")
                 Label("If notifications stop, open Diagnostics to see whether iOS suspended or killed the app.",
                       systemImage: "waveform.path.ecg")
+                Label("To save battery, raise keepalive-interval on your ntfy server (e.g. 2m). intfy adapts on its own.",
+                      systemImage: "antenna.radiowaves.left.and.right")
             }
             .font(.subheadline)
         }

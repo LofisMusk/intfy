@@ -1,69 +1,66 @@
-# Contributing to intfy
+# Contributing
 
-Thanks for helping out! intfy is a small, dependency-free SwiftUI app. Bug reports, fixes and focused features are all welcome.
+Thanks for helping out! Bug reports, fixes and small features are all welcome.
 
-By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+## Reporting a bug
 
-## Reporting bugs
+Easiest way: in the app, go to **Settings → Report a Bug**. It opens a GitHub issue with your intfy version, iOS version and iPhone model already filled in, and can add the Diagnostics log too.
 
-Please [open an issue](https://github.com/LofisMusk/intfy/issues) that includes:
+Or [open an issue](https://github.com/LofisMusk/intfy/issues) yourself and include:
 
-- your iOS version and device;
-- your ntfy server version, and whether a reverse proxy sits in front of it;
-- the commit you are running, shown in *Settings → About → Commit*;
-- what you expected to happen and what happened instead.
+- iOS version and device
+- ntfy server version, and whether there's a reverse proxy in front
+- the commit you're on (*Settings → About*)
+- what you expected and what happened
 
-**Background-delivery problems** (missed or late notifications) are much easier to track down with the diagnostics log. Open *Settings → Diagnostics*, tap **Copy** and paste the log into the issue. It shows whether iOS suspended the app, killed it, or whether the server dropped the connection.
+Missed or late notifications? Open *Settings → Diagnostics*, tap **Copy** and paste the log. It shows whether iOS froze the app, killed it, or the connection dropped.
 
-**Never post tokens, passwords or private server addresses.** Redact them before pasting logs or screenshots.
+Remove tokens, passwords and server addresses before posting anything.
 
 ## Building
 
-You need a Mac with Xcode 16 or later. There are no package dependencies.
+See [Build](README.md#build) in the README. In short: Mac, Xcode 16+, `./scripts/build-ipa.sh`.
+
+New `.swift` files under `Intfy/` are picked up automatically; no need to touch `project.pbxproj`.
+
+## Testing
+
+There are no unit tests yet, so test by running the app:
+
+1. `./scripts/build-ipa.sh` must build without warnings.
+2. Try it in the Simulator against an ntfy server (the `binwiederhier/ntfy` Docker image works fine).
+3. If you touched the connection or background code, test on a real phone too. The Simulator never freezes apps in the background. Put what you saw in Diagnostics into the PR.
+
+Want to skip the setup screen in the Simulator? Preload a server:
 
 ```sh
-git clone https://github.com/LofisMusk/intfy.git
-cd intfy
-./scripts/build-ipa.sh          # unsigned build/intfy-<hash>.ipa, no signing setup needed
+DEV=<simulator-udid>
+xcodebuild -project Intfy.xcodeproj -scheme Intfy -destination "id=$DEV" -derivedDataPath build/SimData build
+xcrun simctl install $DEV build/SimData/Build/Products/Debug-iphonesimulator/Intfy.app
+PREFS="$(xcrun simctl get_app_container $DEV dev.intfy.app data)/Library/Preferences/dev.intfy.app"
+HEX=$(printf '%s' '[{"name":"Home","host":"127.0.0.1","port":2586,"topics":["alerts"]}]' | xxd -p | tr -d '\n')
+xcrun simctl spawn $DEV defaults write "$PREFS" servers -data $HEX
+xcrun simctl privacy $DEV grant location-always dev.intfy.app
+xcrun simctl launch $DEV dev.intfy.app
 ```
-
-To run the app on your own device from Xcode, sign it with **your own** Apple ID:
-
-```sh
-cp Config/Signing.xcconfig.example Config/Signing.xcconfig
-# set DEVELOPMENT_TEAM and a unique PRODUCT_BUNDLE_IDENTIFIER
-```
-
-`Config/Signing.xcconfig` is gitignored. Don't pick a team in Xcode's *Signing & Capabilities* tab, because that writes it into `project.pbxproj`, which is committed. A pull request containing a `DEVELOPMENT_TEAM` value will be asked to remove it.
-
-The project uses Xcode's synchronized folders. A new `.swift` file placed under `Intfy/` is picked up automatically, so there is no need to edit `project.pbxproj`.
-
-## Testing your change
-
-The app has no unit test target yet; changes are verified by running the app. Before opening a PR:
-
-1. Run `./scripts/build-ipa.sh`. It must build with **no warnings**.
-2. Run the app in the Simulator against an ntfy server (the official `binwiederhier/ntfy` Docker image works well). [Testing without a real server](README.md#testing-without-a-real-server) in the README shows how to preconfigure a server from the command line.
-3. If your change touches the connection or background behaviour, also test it on a real device. The Simulator does not reproduce iOS suspending apps or the Local Network permission. Include what you saw in *Settings → Diagnostics* in the PR description.
 
 ## Code style
 
-- **Match the surrounding code.** That means Swift 5 language mode, `@MainActor` models, `@Observable` for UI state, and SwiftUI views split into small files under `Intfy/Views/`.
-- **Keep it dependency-free.** Use Apple frameworks only. Adding a Swift package needs a strong reason.
-- **Keep the UI text in English.** Use sentence case for footers and Title Case for buttons and navigation titles, as the existing screens do.
-- **Comment the *why*:** iOS quirks, workarounds and protocol details. Well-named code doesn't need comments explaining *what* it does.
-- **Never log or display secrets.** Credentials belong in the Keychain, never in `UserDefaults`.
+- Match the code around you: Swift 5, SwiftUI, `@Observable` models, small view files in `Intfy/Views/`.
+- Apple frameworks only. No packages unless there's a really good reason.
+- Comment the *why* (iOS quirks, workarounds), not the *what*.
+- Secrets go in the Keychain. Never log them or show them.
+- UI text is in English.
 
 ## Pull requests
 
-1. Fork the repo and create a branch from `main`.
-2. Keep each PR focused on one fix or feature. Smaller PRs get reviewed faster.
-3. Write commit messages in the imperative mood, e.g. "Add per-server notification sound", with a short body explaining *why* when it isn't obvious.
-4. Update `README.md` if you change behaviour, settings or setup steps.
-5. Open the PR against `main` and describe what changed and how you tested it.
+1. Fork, branch off `main`.
+2. One fix or feature per PR. Small PRs get merged faster.
+3. Commit messages in the imperative: "Add per-server sound", not "Added…".
+4. Update the README if you change how something works or how to set it up.
+5. Say in the PR what you changed and how you tested it.
+6. Don't commit your `DEVELOPMENT_TEAM` or bundle ID.
 
-Every push builds an IPA in GitHub Actions. On `main`, the workflow also publishes it as a release named `intfy-<short hash>`, so a change becomes installable as soon as it is merged.
+Once merged into `main`, CI builds a release and pushes it to the SideStore/AltStore source, so it's installable right away.
 
-## License
-
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing you agree that your code is released under the [MIT License](LICENSE).

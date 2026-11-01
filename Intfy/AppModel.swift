@@ -162,11 +162,21 @@ final class AppModel {
         if localNetworkStatus == .denied && promptInFlight == nil { localNetwork.recheck() }
         promptNext()
         ensureConnected()
+        // A down server may be sleeping through a long background backoff; try now.
+        retryNow()
     }
 
     func enteredBackground() {
         isActive = false
+        store.saveCursors()
+        // The Bonjour probe only matters while the user can answer the prompt.
+        if localNetworkStatus != .granted { localNetwork.pause() }
         diagnostics.log("Moved to background (audio keep-alive \(audio.isPlaying ? "playing" : "off"), location \(Self.describe(locationStatus)))")
+    }
+
+    /// Called from `applicationWillTerminate`.
+    func willTerminate() {
+        store.saveCursorsIfNeeded()
     }
 
     func setAudioKeepAlive(_ enabled: Bool) {
@@ -279,6 +289,11 @@ final class AppModel {
         activeServers.filter { connection(for: $0.id) != .connected }.forEach(connect)
     }
 
+    /// Restarts streams waiting out a retry backoff; leaves connected and connecting ones alone.
+    private func retryNow() {
+        activeServers.filter { subscriptions[$0.id]?.isRetrying == true }.forEach(connect)
+    }
+
     private func subscription(for id: UUID) -> NtfySubscription {
         if let existing = subscriptions[id] { return existing }
         let subscription = NtfySubscription()
@@ -287,7 +302,15 @@ final class AppModel {
             self?.logConnection(state, server: id)
         }
         subscription.onEvent = { [weak self] in self?.handle($0, from: id) }
+        subscription.onLog = { [weak self] text in
+            guard let self else { return }
+            diagnostics.log("\(server(with: id)?.displayName ?? "Server"): \(text)")
+        }
         subscription.since = { [weak self] in self?.store.sinceParameter(for: id) }
+        // Retrying every 30 s against an unreachable server (e.g. a home server while you are
+        // out) keeps waking the radio. In the background back off up to 5 min: a network change
+        // and opening the app both reconnect immediately, and messages are caught up via `since`.
+        subscription.maxRetryDelay = { [weak self] in self?.isActive == true ? 30 : 5 * 60 }
         subscriptions[id] = subscription
         return subscription
     }
@@ -346,16 +369,26 @@ final class AppModel {
     private func startPathMonitor() {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let satisfied = path.status == .satisfied
-            let signature = satisfied ? path.availableInterfaces.map(\.name).joined(separator: ",") : "offline"
+            let signature = satisfied ? Self.signature(of: path.availableInterfaces) : "offline"
             Task { @MainActor in self?.pathChanged(signature: signature, satisfied: satisfied) }
         }
         pathMonitor.start(queue: DispatchQueue(label: "dev.intfy.path"))
+    }
+
+    /// The interfaces the streams can actually be using. While Wi-Fi or Ethernet is up, the
+    /// cellular interface is only a standby that comes and goes with signal strength; counting
+    /// it would tear down and re-handshake every healthy stream each time it flaps.
+    nonisolated private static func signature(of interfaces: [NWInterface]) -> String {
+        let hasLocal = interfaces.contains { $0.type == .wifi || $0.type == .wiredEthernet }
+        let relevant = hasLocal ? interfaces.filter { $0.type != .cellular } : interfaces
+        return relevant.map(\.name).joined(separator: ",")
     }
 
     /// Wi-Fi ↔ cellular switches leave the old sockets dangling until timeout; reconnect right away.
     private func pathChanged(signature: String, satisfied: Bool) {
         defer { lastPathSignature = signature }
         guard let previous = lastPathSignature, previous != signature, satisfied else { return }
+        diagnostics.log("Network changed (\(previous) → \(signature)), reconnecting")
         connectAll()
     }
 

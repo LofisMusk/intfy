@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
+        AppModel.shared.willTerminate()
         DiagnosticsLog.shared.processTerminating()
     }
 
