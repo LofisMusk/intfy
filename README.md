@@ -127,6 +127,7 @@ Intfy/
   LocationKeepAlive.swift   background location keep-alive
   NotificationService.swift local notifications
   DiagnosticsLog.swift      on-device log: heartbeat, app lifecycle, battery
+  BugReport.swift           prefilled GitHub issue (versions, device model)
   ServerConfig.swift        server list + Keychain
   Views/                    SwiftUI screens
 Config/Info.plist           permissions text, background modes
@@ -134,6 +135,8 @@ scripts/                    build-ipa.sh, make-source.py, make-icon.swift
 ```
 
 ## Contributing
+
+Found a bug? In the app, tap **Settings → Report a Bug**. It opens a GitHub issue with your versions and device already filled in.
 
 Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
 

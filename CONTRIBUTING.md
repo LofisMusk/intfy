@@ -4,7 +4,9 @@ Thanks for helping out! Bug reports, fixes and small features are all welcome.
 
 ## Reporting a bug
 
-[Open an issue](https://github.com/LofisMusk/intfy/issues) and include:
+Easiest way: in the app, go to **Settings → Report a Bug**. It opens a GitHub issue with your intfy version, iOS version and iPhone model already filled in, and can add the Diagnostics log too.
+
+Or [open an issue](https://github.com/LofisMusk/intfy/issues) yourself and include:
 
 - iOS version and device
 - ntfy server version, and whether there's a reverse proxy in front

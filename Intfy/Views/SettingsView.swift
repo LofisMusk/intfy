@@ -39,6 +39,9 @@ struct SettingsView: View {
                     NavigationLink { DiagnosticsView() } label: {
                         SettingsRow(icon: "waveform.path.ecg", color: .gray, title: "Diagnostics")
                     }
+                    NavigationLink { BugReportView() } label: {
+                        SettingsRow(icon: "ladybug.fill", color: .red, title: "Report a Bug")
+                    }
                     NavigationLink { AboutView() } label: {
                         SettingsRow(icon: "info", color: .intfy, title: "About", value: model.appVersion)
                     }
