@@ -55,15 +55,17 @@ Build an unsigned IPA from the command line:
 CONFIGURATION=Debug ./scripts/build-ipa.sh
 ```
 
-Builds are versioned by commit. Nobody tags by hand: CI creates a release (and its tag) for each build on `main`.
+Builds are versioned by commit. Nobody tags by hand: CI creates a release (and its tag) for each build on `main`. The app version is `<MARKETING_VERSION>.<commit count>` (e.g. `1.0.42`) with the commit count as build number, so every build on `main` is newer than the last one; this is what lets sideloading apps detect updates.
 
 ### CI builds
 
-The GitHub Actions workflow `.github/workflows/build-ipa.yml` builds the IPA on every push that changes the app, meaning anything under `Intfy/`, `Intfy.xcodeproj/`, `Config/`, `scripts/build-ipa.sh` or the workflow itself. You can also start it by hand under *Actions → Build IPA → Run workflow*.
+The GitHub Actions workflow `.github/workflows/build-ipa.yml` builds the IPA on every push that changes the app, meaning anything under `Intfy/`, `Intfy.xcodeproj/`, `Config/`, `scripts/build-ipa.sh`, `scripts/make-source.py` or the workflow itself. You can also start it by hand under *Actions → Build IPA → Run workflow*.
 
 Each run uploads the build as an **artifact** named `intfy-<short hash>`. GitHub delivers artifacts as a zip that contains the `.ipa` and keeps them for 90 days by default.
 
 On `main`, the workflow also publishes a **GitHub release** named `intfy-<short hash>` with the `.ipa` attached directly (no zip). Its title and notes come from the commit message, and the newest one is marked *Latest*. Pushes to other branches only produce artifacts. Re-running the workflow for the same commit replaces the release asset instead of creating a duplicate.
+
+After the release, `scripts/make-source.py` regenerates the **AltStore-format source** and the workflow deploys it to GitHub Pages: `source.json`, the app icon and a small landing page. The newest version comes from the built app's `Info.plist`; older versions (up to 15) are carried over from the source currently published. Each version points at its release asset, so the source never hosts IPAs itself. Pages must be enabled once under *Settings → Pages → Build and deployment → Source: GitHub Actions*.
 
 Or build and run from Xcode on a connected device. Signing settings live in a personal, gitignored file, so everyone signs with their own Apple ID:
 
@@ -82,11 +84,19 @@ swift scripts/make-icon.swift     # → Intfy/Assets.xcassets/AppIcon.appiconset
 
 ## Installing (sideloading)
 
-Download the newest `intfy-<hash>.ipa` from [Releases](https://github.com/LofisMusk/intfy/releases/latest), or build it yourself as described above.
+**Recommended: add the source.** SideStore, AltStore, LiveContainer (with its built-in SideStore), Feather and other apps that read AltStore-format sources can install intfy from it and offer every new build as an update:
+
+```
+https://lofismusk.github.io/intfy/source.json
+```
+
+Open [lofismusk.github.io/intfy](https://lofismusk.github.io/intfy/) on the iPhone for one-tap *Add to SideStore* / *Add to AltStore* buttons, or paste the URL under *Sources → +*.
+
+Alternatively, download the newest `intfy-<hash>.ipa` from [Releases](https://github.com/LofisMusk/intfy/releases/latest), or build it yourself as described above.
 
 The IPA is unsigned. Any of these tools will sign it with your Apple ID:
 
-- **AltStore / SideStore:** open `intfy-<hash>.ipa` from the Files app, or use *My Apps → +*.
+- **AltStore / SideStore:** add the source above, or open `intfy-<hash>.ipa` from the Files app, or use *My Apps → +*.
 - **Sideloadly:** drag in the IPA and enter your Apple ID.
 - **Xcode:** build and run directly. With a free account, the app expires after 7 days.
 

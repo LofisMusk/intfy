@@ -1,7 +1,8 @@
 name: Build IPA
 
 # Every commit that touches the app is a build: intfy-<short hash>.ipa. On main it is also
-# published as a GitHub release of the same name (the workflow creates the tag; nobody tags by hand).
+# published as a GitHub release of the same name (the workflow creates the tag; nobody tags by hand)
+# and added to the AltStore/SideStore source on GitHub Pages (<owner>.github.io/intfy/source.json).
 on:
   push:
     paths:
@@ -9,6 +10,7 @@ on:
       - "Intfy.xcodeproj/**"
       - "Config/**"
       - "scripts/build-ipa.sh"
+      - "scripts/make-source.py"
       - ".github/workflows/build-ipa.yml"
   workflow_dispatch:
 
@@ -25,6 +27,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the version number is the commit count
 
       # The project uses the Xcode 16+ synchronized-folder format.
       - uses: maxim-lobanov/setup-xcode@v1
@@ -58,3 +62,41 @@ jobs:
             gh release create "$NAME" "$IPA" --target "$GITHUB_SHA" --latest \
               --title "$NAME: $(git log -1 --format='%s')" --notes-file "$notes"
           fi
+
+      - name: Build source site
+        if: github.ref == 'refs/heads/main'
+        env:
+          NAME: ${{ steps.build.outputs.ipa_name }}
+          IPA: ${{ steps.build.outputs.ipa_path }}
+          APP: ${{ steps.build.outputs.app_path }}
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          python3 scripts/make-source.py \
+            --app "$APP" --ipa "$IPA" \
+            --download-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$NAME/$NAME.ipa" \
+            --site-url "https://$owner.github.io/${GITHUB_REPOSITORY#*/}/" \
+            --out build/site
+
+      - name: Upload source site
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/site
+
+  # Needs Settings → Pages → Source: "GitHub Actions" (one-time).
+  pages:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
