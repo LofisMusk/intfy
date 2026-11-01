@@ -11,6 +11,7 @@ intfy is a sideloadable iOS client for **self-hosted [ntfy](https://ntfy.sh) ser
 - [Architecture](#architecture)
 - [ntfy protocol details](#ntfy-protocol-details)
 - [Privacy & security](#privacy--security)
+- [Battery](#battery)
 - [Limitations](#limitations)
 - [Troubleshooting](#troubleshooting)
 - [Testing without a real server](#testing-without-a-real-server)
@@ -36,8 +37,8 @@ If iOS suspends or kills the app anyway, these fallbacks take over:
 | Significant-location-change monitoring | iOS relaunches a terminated app in the background; `AppDelegate` reconnects immediately. |
 | Wake-up poll | On each location callback, if the stream is down, the app runs a one-shot `poll=1&since=…` fetch (throttled to once per 60 s). |
 | `BGAppRefreshTask` (`dev.intfy.refresh`) | Opportunistic refresh, earliest every 15 min, scheduled by iOS. |
-| `NWPathMonitor` | Reconnects immediately when the network changes (Wi-Fi ↔ cellular) instead of waiting for the dead socket to time out. |
-| Stale-socket detection | No data for 100 s (ntfy's keepalive interval is 45 s) means a dead connection, so the app reconnects. |
+| `NWPathMonitor` | Reconnects immediately when the network changes (Wi-Fi ↔ cellular) instead of waiting for the dead socket to time out. The cellular interface is ignored while Wi-Fi or Ethernet is up, so a flapping mobile signal doesn't tear down healthy streams. |
+| Stale-socket detection | No data for two keepalive intervals plus 15 s (at least 100 s) means a dead connection, so the app reconnects. The interval is learned from the stream; see [Battery](#battery). |
 
 ## Requirements
 
@@ -192,7 +193,9 @@ ntfy server ──HTTP stream──▶ NtfySubscription ──event──▶ App
 2. Calls `URLSession.bytes(for:)` and reads `bytes.lines`.
 3. Decodes each line and passes it to `onEvent`.
 
-The request and idle timeouts are 100 s. When the stream errors or closes, the loop waits and retries with exponential backoff from 1 s up to 30 s. A successful connection resets the backoff.
+Each connection attempt gets its own `URLSession` whose request and idle timeout is `max(100 s, 2 × keepalive + 15 s)`. The keepalive interval starts at ntfy's default of 45 s and is then learned from the time between `open`/`keepalive` events. If a connected stream times out without a single keepalive, the estimate is doubled for the next attempt (capped at 15 min), so a server with a longer `keepalive-interval` is picked up after one or two reconnects. Changes are logged in Diagnostics.
+
+When the stream errors or closes, the loop waits and retries with exponential backoff from 1 s up to 30 s in the foreground and up to 5 min in the background. A successful connection resets the backoff. Opening the app and any network change reconnect immediately, whatever the backoff.
 
 ### State & persistence
 
@@ -202,7 +205,7 @@ The request and idle timeouts are 100 s. When the stream errors or closes, the l
 | Token / password | Keychain (`dev.intfy.credentials`, one item per server id) | `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, so it stays readable in the background while the phone is locked |
 | Message history | `Application Support/messages.json` | Capped at 300; file protection `completeUntilFirstUserAuthentication` |
 | Seen message IDs | `UserDefaults` (`seenMessageIDs`) | Capped at 2000; prevents duplicate notifications |
-| `since` cursors | `UserDefaults` (`sinceCursors`, keyed by server id) | Server Unix time; reset when that server's host, port or topics change |
+| `since` cursors | `UserDefaults` (`sinceCursors`, keyed by server id) | Server Unix time; reset when that server's host, port or topics change. Written at most every 5 min (keepalives advance it constantly), on every new message, when going to the background and on termination. A slightly older cursor after a crash only means re-fetching messages that are then dropped as duplicates. |
 
 ## ntfy protocol details
 
@@ -231,6 +234,27 @@ intfy uses only standard ntfy endpoints and needs no server-side changes.
 - **Plain HTTP:** connections to any host are allowed (`NSAllowsArbitraryLoads`). `NSAllowsLocalNetworking` is deliberately not set: when present, iOS ignores `NSAllowsArbitraryLoads` and allows plain HTTP only to IP addresses, `.local` names and unqualified hostnames, which breaks hosts like `ntfy.home`. Over the internet, use **HTTPS or a VPN** (Tailscale or WireGuard); otherwise your messages and credentials travel unencrypted.
 - **Credentials** are stored in the Keychain as device-only items: they are never synced to iCloud and never moved to another device when you restore a backup.
 
+## Battery
+
+The keep-alives are what make delivery reliable, and they cost battery. The app keeps all of them and avoids waking the phone for anything else:
+
+| What | Why it matters |
+|---|---|
+| Learned keepalive interval | Every keepalive wakes the radio. On cellular, each wake keeps the modem in its high-power state for several seconds. The app follows whatever interval the server uses, so you can raise it (see below). |
+| Background retry backoff up to 5 min | A server that can't be reached (a home server while you are out, an outage) no longer means a connection attempt every 30 s all day. |
+| Cellular ignored while on Wi-Fi | A weak mobile signal makes the cellular interface come and go; this used to reconnect every stream each time. |
+| Fewer disk writes and timer wake-ups | The `since` cursor is no longer written on every keepalive, the diagnostics heartbeat runs every 60 s with timer tolerance, and the Local Network probe stops in the background. |
+
+**Biggest lever: the server's keepalive interval.** ntfy sends a keepalive every 45 s by default, about 1,900 radio wake-ups a day. Raising it in `server.yml` cuts that:
+
+```yaml
+keepalive-interval: "2m"
+```
+
+Keep it below every idle timeout between the phone and ntfy: nginx's `proxy_read_timeout` (60 s by default; ntfy's example config uses 3 min), Cloudflare (about 100 s) and mobile carriers' NAT, which can drop idle connections after a few minutes. Don't go above 3 min unless you have checked. The app needs no setting; it adapts on its own.
+
+**Measuring.** While unplugged, *Settings → Diagnostics* logs every 5 % of battery used with the rate in %/h for the whole phone. Compare days, or a day with **Silent Audio Keep-Alive** off. *iOS Settings → Battery → intfy* shows the app's share. Silent audio is the most expensive keep-alive, but turning it off makes iOS more likely to suspend the app.
+
 ## Limitations
 
 - **Approximate location delivers updates rarely**, roughly every 15–20 minutes. The app should stay alive between them, but iOS behaviour over hours or days varies between versions. If iOS does suspend the app, messages arrive late (at the next wake-up or reconnect), but they are not lost while they remain in the server's cache.
@@ -249,6 +273,7 @@ intfy uses only standard ntfy endpoints and needs no server-side changes.
 | Can't connect on the LAN | Allow *Local Network* in *Settings → intfy*. Make sure the server listens on `0.0.0.0`, not `127.0.0.1`. |
 | Works in the foreground, not in the background | Open *Settings → Diagnostics*. "Not running for ~N min" means iOS suspended the app, and "ended without notice" means it was killed or crashed. Keep **Silent Audio Keep-Alive** on and location on **Always**, don't force-quit, and turn off Low Power Mode. If the log suggests a crash, look in *Settings → Privacy & Security → Analytics & Improvements → Analytics Data* for files starting with `Intfy`. |
 | Messages arrive late after hours of inactivity | iOS suspended the app (see [Limitations](#limitations)). Compare the times in the app with the times on the server. |
+| High battery use | See [Battery](#battery). Check *Settings → Diagnostics* for repeated "Network changed" or reconnect entries, raise the server's `keepalive-interval`, and compare the logged %/h. |
 | No banners | Notifications must be allowed. Check that a Focus mode isn't hiding them. Priority 1–2 messages are silent on purpose. |
 
 Check the stream directly from another machine:

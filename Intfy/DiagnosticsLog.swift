@@ -1,9 +1,11 @@
 import Foundation
 import Observation
+import UIKit
 
 /// On-device event log answering "why did I miss a notification?": was the app suspended,
-/// killed, or running? A 30 s heartbeat makes suspensions visible as gaps, and a missing
+/// killed, or running? A 60 s heartbeat makes suspensions visible as gaps, and a missing
 /// clean-exit marker at the next launch means iOS killed the process (or it crashed).
+/// It also records battery drain while unplugged, so the cost of the keep-alives is measurable.
 @MainActor
 @Observable
 final class DiagnosticsLog {
@@ -19,9 +21,14 @@ final class DiagnosticsLog {
 
     @ObservationIgnored private var heartbeat: Timer?
     @ObservationIgnored private var lastBeat: Date?
+    @ObservationIgnored private var batteryMark: (date: Date, level: Float)?
+    @ObservationIgnored private var batteryObservers: [NSObjectProtocol] = []
 
     private static let maxEntries = 500
-    private static let heartbeatInterval: TimeInterval = 30
+    /// Each beat is a CPU wake-up; 60 s with tolerance still shows any real suspension.
+    private static let heartbeatInterval: TimeInterval = 60
+    /// Log battery drain in steps of this many percent while unplugged.
+    private static let batteryStep: Float = 0.05
     private static let lastAliveKey = "diagnosticsLastAlive"
     private static let cleanExitKey = "diagnosticsCleanExit"
 
@@ -55,9 +62,13 @@ final class DiagnosticsLog {
         log("Process started – \(details)")
 
         beat()
-        heartbeat = Timer.scheduledTimer(withTimeInterval: Self.heartbeatInterval, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: Self.heartbeatInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.beat() }
         }
+        // Lets iOS batch this wake-up with others (network, audio, location).
+        timer.tolerance = 15
+        heartbeat = timer
+        startBatteryTracking()
     }
 
     func processTerminating() {
@@ -84,6 +95,52 @@ final class DiagnosticsLog {
         }
         lastBeat = now
         UserDefaults.standard.set(now, forKey: Self.lastAliveKey)
+    }
+
+    // MARK: Battery
+
+    /// Whole-device drain while unplugged, logged every 5 %, e.g. "Battery 80 % – used 5 % in 3 h 10 min
+    /// (1.6 %/h)". Comparing these rates with a keep-alive on and off shows what it costs.
+    private func startBatteryTracking() {
+        guard batteryObservers.isEmpty else { return }
+        let device = UIDevice.current
+        device.isBatteryMonitoringEnabled = true
+        let center = NotificationCenter.default
+        for name in [UIDevice.batteryLevelDidChangeNotification, UIDevice.batteryStateDidChangeNotification] {
+            batteryObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let stateChanged = note.name == UIDevice.batteryStateDidChangeNotification
+                MainActor.assumeIsolated { self?.batteryChanged(stateChanged: stateChanged) }
+            })
+        }
+        batteryChanged(stateChanged: false)
+    }
+
+    private func batteryChanged(stateChanged: Bool) {
+        let device = UIDevice.current
+        let level = device.batteryLevel
+        guard level >= 0 else { return }
+        let percent = Int((level * 100).rounded())
+        guard device.batteryState == .unplugged else {
+            if stateChanged && batteryMark != nil { log("Charger connected at \(percent) %") }
+            batteryMark = nil
+            return
+        }
+        guard let mark = batteryMark else {
+            if stateChanged { log("Unplugged at \(percent) %") }
+            batteryMark = (Date(), level)
+            return
+        }
+        let used = mark.level - level
+        guard used >= Self.batteryStep - 0.001 else { return }
+        let elapsed = Date().timeIntervalSince(mark.date)
+        let rate = Double(used * 100) / max(elapsed / 3600, 1.0 / 60)
+        log("Battery \(percent) % – used \(Int((used * 100).rounded())) % in \(Self.duration(elapsed)) (\(String(format: "%.1f", rate)) %/h, whole phone)")
+        batteryMark = (Date(), level)
+    }
+
+    private static func duration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        return minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h \(minutes % 60) min"
     }
 
     private func persist() {

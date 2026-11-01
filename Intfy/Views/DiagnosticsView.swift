@@ -7,9 +7,10 @@ struct DiagnosticsView: View {
         List {
             Section {
                 Text("""
-                A heartbeat is recorded every 30 seconds. “Not running for…” means iOS suspended the app; \
+                A heartbeat is recorded every minute. “Not running for…” means iOS suspended the app; \
                 “ended without notice” means iOS killed it (or it crashed – check Settings → Privacy & Security → \
-                Analytics & Improvements → Analytics Data for files starting with “Intfy”).
+                Analytics & Improvements → Analytics Data for files starting with “Intfy”). While unplugged, \
+                every 5 % of battery used is logged with the drain rate of the whole phone.
                 """)
                 .font(.footnote)
                 .foregroundStyle(.secondary)

@@ -10,12 +10,18 @@ final class MessageStore {
     @ObservationIgnored private var seenOrder: [String]
     @ObservationIgnored private var seen: Set<String>
     @ObservationIgnored private var cursors: [String: Int]
+    @ObservationIgnored private var cursorsDirty = false
+    @ObservationIgnored private var cursorsSavedAt = Date.distantPast
 
     private static let maxMessages = 300
     private static let maxSeen = 2000
     private static let seenKey = "seenMessageIDs"
     private static let cursorsKey = "sinceCursors"
     private static let legacyCursorKey = "sinceCursor"
+    /// Keepalives advance the cursor every ~45 s; writing it each time is pointless disk work.
+    /// A cursor a few minutes old only means a slightly larger catch-up after a crash —
+    /// duplicates are dropped by ID, so nothing is lost or notified twice.
+    private static let cursorSaveInterval: TimeInterval = 5 * 60
 
     private let fileURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -44,12 +50,24 @@ final class MessageStore {
     func advanceCursor(for server: UUID, to time: Int) {
         guard time > (cursors[server.uuidString] ?? 0) else { return }
         cursors[server.uuidString] = time
-        UserDefaults.standard.set(cursors, forKey: Self.cursorsKey)
+        cursorsDirty = true
+        if Date().timeIntervalSince(cursorsSavedAt) > Self.cursorSaveInterval { saveCursors() }
     }
 
     func resetCursor(for server: UUID) {
         cursors[server.uuidString] = nil
+        saveCursors()
+    }
+
+    /// Writes pending cursor changes; also called when going to the background or terminating.
+    func saveCursors() {
+        cursorsDirty = false
+        cursorsSavedAt = Date()
         UserDefaults.standard.set(cursors, forKey: Self.cursorsKey)
+    }
+
+    func saveCursorsIfNeeded() {
+        if cursorsDirty { saveCursors() }
     }
 
     /// Carries the single-server cursor over to the server migrated from the old config.
@@ -81,6 +99,7 @@ final class MessageStore {
             seenOrder.removeFirst(overflow)
         }
         UserDefaults.standard.set(seenOrder, forKey: Self.seenKey)
+        saveCursorsIfNeeded()
 
         let index = messages.firstIndex { $0.time < message.time } ?? messages.endIndex
         messages.insert(message, at: index)

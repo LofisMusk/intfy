@@ -63,6 +63,11 @@ final class LocalNetworkPermission {
         check()
     }
 
+    /// Stops the probe (in the background); `check()` or `recheck()` starts it again.
+    func pause() {
+        stop()
+    }
+
     private func stop() {
         browser?.cancel()
         browser = nil
